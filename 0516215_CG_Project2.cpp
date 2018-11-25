@@ -5,27 +5,36 @@
 #include"FreeImage.h"
 #include<iostream>
 #include<math.h>
+#include<string>
 using namespace std;
 
 int window_width = 600, window_height = 600;
 int cutoff = 0, exponent = 0;
-GLuint texture_id;
+//GLuint texture_id;
 
-int degree = 20;
-float radius = 15.0;
+float radius = 1.0;
 int slice = 360;    //earth longtitude
 int stack = 180;    //earth latitude
+float spin_deg = 0.1;    // X = spin_deg*365
 
 float degree_Earth_Rotate = 0;
+float degree_Moon = 0;
+
+int pause = 0;
+float spin_deg_save = 0;
+
 // int lighting_mode = 0;	//0:point light, 1:direcitonal light, 2: spotlight
+
+unsigned int EarthTexture, MoonTexture;
 
 void Init();
 void Display();
 void Idle();
 void Keyboard(unsigned char key, int x, int y);
 void Lighting();
-void DrawSphere(float r, int stack, int slice);
-void InitTexture();
+void DrawSphere(float r, int stack, int slice, bool axis);
+unsigned int InitTexture(const char* filename);
+float DegreeCalc(float deg, float spin_angle);
 
 int main(int argc, char** argv){
 	glutInit(&argc, argv);
@@ -35,7 +44,9 @@ int main(int argc, char** argv){
 	glutCreateWindow("0516215_Project2");
 
     Init();
-    InitTexture();
+	EarthTexture = InitTexture("./earth.jpg");
+	MoonTexture  = InitTexture("./moon.jpg");
+    Lighting();
 
 	glutDisplayFunc(Display);
 	glutIdleFunc(Idle);
@@ -49,7 +60,7 @@ void Display(){
     //ModelView Matrix
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	gluLookAt(0.0f, 50.0f, 50.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+	gluLookAt(0.0f, 5.0f, 10.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 	//Projection Matrix
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
@@ -58,44 +69,51 @@ void Display(){
 	glViewport(0, 0, window_width, window_height);
 
     //clear
+	glMatrixMode(GL_MODELVIEW);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glClear(GL_DEPTH_BUFFER_BIT);
 
-	glMatrixMode(GL_MODELVIEW);
-    Lighting();
 
-	float red[]   = { 1.0f, 0.0f, 0.0f, 1.0f };
-	float green[] = { 0.0f, 1.0f, 0.0f, 1.0f };
-	float blue [] = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+	// float red[]   = { 1.0f, 0.0f, 0.0f, 1.0f };
+	// float green[] = { 0.0f, 1.0f, 0.0f, 1.0f };
+	// float blue [] = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+
+	// glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
+	// glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
+	// glEnable(GL_TEXTURE_GEN_S);
+	// glEnable(GL_TEXTURE_GEN_T);
+
+
 
 	// draw earth
 	glPushMatrix();
-	
-
-	// 自轉(rotate itself)
-	//glRotatef(degree_Earth_Rotate, sin(23.5f * (2.0f*M_PI/360.0f)), cos(23.5f * (2.0f*M_PI/360.0f)), 0.0f);
 	glRotatef(-23.5, 0.0f, 0.0f, 1.0f);
 	glRotatef(degree_Earth_Rotate, 0.0f, 1.0f, 0.0f);
-
-	// glMaterialfv(GL_FRONT, GL_DIFFUSE, blue);
-	// glMaterialfv(GL_FRONT, GL_AMBIENT, blue);
-	
-	DrawSphere(radius/3, slice, stack);
+	glBindTexture(GL_TEXTURE_2D, EarthTexture);
+	DrawSphere(radius, slice, stack, true);
+	glBindTexture(GL_TEXTURE_2D, 0);
 	glPopMatrix();
 
+	// draw moon
+	glPushMatrix();
 
-	// glPushMatrix();
-	// //glRotatef(degree, 0, 1, 0);
-	// // glMaterialfv(GL_FRONT, GL_DIFFUSE, red);
-	// // glMaterialfv(GL_FRONT, GL_SPECULAR, green);
-	// glMaterialfv(GL_FRONT, GL_AMBIENT, blue);
-	// glMaterialf(GL_FRONT, GL_SHININESS, 10);
-	// glutSolidSphere(3.5, 72, 36);
-	// glPopMatrix();
+	glRotatef(degree_Moon, 0.0f, 1.0f, 0.0f);
+	glTranslatef(3*radius, 0.0, 0.0);
+	glRotatef(degree_Moon, 0.0f, 1.0f, 0.0f);
+
+	glBindTexture(GL_TEXTURE_2D, MoonTexture);
+	DrawSphere(radius/2, 240, 60, true);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glPopMatrix();
 
 	glutSwapBuffers();
-
 }
+
+
+
+
 void Init() {
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -107,37 +125,69 @@ void Init() {
 	//enable lighting
 	glEnable(GL_LIGHTING);
 	glShadeModel(GL_SMOOTH);
+
+	//enable 2D texture
+	glEnable(GL_TEXTURE_2D);
 }
 
 void Idle() {
 	Sleep(20);	//about 50 fps
+
+	degree_Earth_Rotate = DegreeCalc(degree_Earth_Rotate, spin_deg*365.0f);
+	degree_Moon = DegreeCalc(degree_Moon, spin_deg*(28.0f*360.0f/365.0f));
+
 	glutPostRedisplay();
 }
 
+float DegreeCalc(float deg, float spin_angle){
+	deg += spin_angle;
+	while(deg >= 360.0)
+		deg -= 360.0;
+	return deg;
+}
+
 void Keyboard(unsigned char key, int x, int y) {
-	switch (key) {
-	default:
-		break;
+	if (key == 'o') {
+		if (slice == 360 && stack == 180) {
+			slice = 4;
+			stack = 2;
+		}
+		else if (slice == 4 && stack == 2) {
+			slice = 360;
+			stack = 180;
+		}
+	}
+	else if (key == 'p') {
+		// do pause!!!!!
+		if(pause == 0){ // if not paused, then pause it
+			pause = 1;
+			spin_deg_save = spin_deg;
+			spin_deg = 0;
+		}
+		else if (pause == 1) {
+			pause = 0;
+			spin_deg = spin_deg_save;
+			spin_deg_save = 0;
+		}
 	}
 }
 
 void Lighting() {
-	GLfloat diffuse[]  = { 1.0f, 1.0f, 1.0f, 1.0f };
 	GLfloat ambient[]  = { 0.5f, 0.5f, 0.5f, 1.0f };
+	GLfloat diffuse[]  = { 1.0f, 1.0f, 1.0f, 1.0f };
 	GLfloat position[] = { 0.0f, 10.0f, 0.0f, 1.0f };
-	GLfloat none[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	glEnable(GL_LIGHT0);
-	glLightfv(GL_LIGHT0, GL_DIFFUSE,  diffuse);
 	glLightfv(GL_LIGHT0, GL_AMBIENT,  ambient);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE,  diffuse);
 	glLightfv(GL_LIGHT0, GL_POSITION, position);
+	glEnable(GL_LIGHT0);
 }
 
 
-void DrawSphere(float r, int slice, int stack) {
+void DrawSphere(float r, int slice, int stack, bool axis) {
 	//F(u, v) = [cos(u)*sin(v)*r, cos(v)*r, sin(u)*sin(v)*r]
 	//float x, y, z;
-	glBindTexture(GL_TEXTURE_2D, texture_id);
+	// glBindTexture(GL_TEXTURE_2D, texture_id);
 	
 	for (float i = 0; i <= stack; i++) {
 
@@ -177,17 +227,18 @@ void DrawSphere(float r, int slice, int stack) {
 			float tex_X2 = (float) j+1.0f / (float)slice;
 			float tex_Y2 = (float) i+1.0f / (float)stack;
 			
-			glTexCoord2f(tex_X, tex_Y);
+			glTexCoord2f(1.0f-tex_X, 1.0f-tex_Y);
 			glVertex3f(SphereSurface[0][0], SphereSurface[0][1], SphereSurface[0][2]);
-			glTexCoord2f(tex_X, tex_Y2);			
+			//glTexCoord2f(tex_X, tex_Y2);			
 			glVertex3f(SphereSurface[1][0], SphereSurface[1][1], SphereSurface[1][2]);
-			glTexCoord2f(tex_X2, tex_Y);			
+						
+			//glTexCoord2f(tex_X2, tex_Y2);
 			glVertex3f(SphereSurface[3][0], SphereSurface[3][1], SphereSurface[3][2]);
-			glTexCoord2f(tex_X2, tex_Y2);			
+			//glTexCoord2f(tex_X2, tex_Y);			
 			glVertex3f(SphereSurface[2][0], SphereSurface[2][1], SphereSurface[2][2]);
 
-			float v2[3] = { SphereSurface[1][0] - SphereSurface[0][0], SphereSurface[1][1] - SphereSurface[0][1], SphereSurface[1][2] - SphereSurface[0][2] };
 			float v1[3] = { SphereSurface[3][0] - SphereSurface[0][0], SphereSurface[3][1] - SphereSurface[0][1], SphereSurface[3][2] - SphereSurface[0][2] };
+			float v2[3] = { SphereSurface[1][0] - SphereSurface[0][0], SphereSurface[1][1] - SphereSurface[0][1], SphereSurface[1][2] - SphereSurface[0][2] };
 			
 			// calculate the normal of the surface (for coloring)
 			float normal[3]  = {v1[1]*v2[2]-v2[1]*v1[2], v2[0]*v1[2]-v1[0]*v2[2], v1[0]*v2[1]-v2[0]*v1[1]};
@@ -199,27 +250,45 @@ void DrawSphere(float r, int slice, int stack) {
 			
 			glNormal3fv(normal);
 			
+			// glBindTexture(GL_TEXTURE_2D, 0);
 			glEnd();
 		}
 	}
+	if(axis){
+		glBegin(GL_LINE_STRIP);
+		// glColor3f (1.0f, 0.0f, 0.0f);
+		glVertex3f(0.0f, -2*radius, 0.0f);
+		// glColor3f (1.0f, 0.0f, 0.0f);
+		glVertex3f(0.0f, 2*radius, 0.0f);
+		float red[]   = { 1.0f, 0.0f, 0.0f, 1.0f };
+		// glMaterialfv(GL_FRONT, GL_AMBIENT, red);
+		glEnd();
+	}
 }
 
-void InitTexture(){
+unsigned int InitTexture(const char* filename){
 
-    //enable 2D texture
-	glEnable(GL_TEXTURE_2D);
-	
-    FIBITMAP* pImage = FreeImage_Load(FreeImage_GetFileType("./earth.jpg", 0), "./earth.jpg");
+	unsigned int texture_id;
+	FreeImage_Initialise(0);
+
+    FIBITMAP* pImage = FreeImage_Load(FreeImage_GetFileType(filename, 0), filename);
 	FIBITMAP* p32BitsImage = FreeImage_ConvertTo32Bits(pImage);
 	int iWidth  = FreeImage_GetWidth(p32BitsImage);
 	int iHeight = FreeImage_GetHeight(p32BitsImage);
 	
-	// glBindTexture(GL_TEXTURE_2D, textObj[obj]);
     glGenTextures(1, &texture_id);
 	glBindTexture(GL_TEXTURE_2D, texture_id);
+
+	// glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, iWidth, iHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, (void *)FreeImage_GetBits(p32BitsImage));
 	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
 
+	glBindTexture(GL_TEXTURE_2D, 0); 
+	FreeImage_Unload(pImage);
+	FreeImage_Unload(p32BitsImage);
+	FreeImage_DeInitialise();
 
-	//glBindTexture(GL_TEXTURE_2D, 0); 
+	return texture_id;
 }
